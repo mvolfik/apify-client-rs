@@ -7,6 +7,7 @@ use crate::generic_types::{BaseBuilder, PaginationList, NoOutput};
 use crate::error::ApifyClientError;
 use crate::builders::dataset::{GetItemsBuilder, DownloadItemsBuilder, Format};
 use std::marker::PhantomData;
+use crate::resource_clients::dataset::Dataset;
 
 pub struct DatasetCollectionClient<'a> {
     pub apify_client: &'a ApifyClient,

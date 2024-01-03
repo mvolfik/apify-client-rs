@@ -1,7 +1,7 @@
 use crate::resource_clients::dataset::DatasetClient;
 use std::marker::PhantomData;
 use crate::error::ApifyClientError;
-use crate::generic_types::{BaseBuilder, PaginationList, NoPayload};
+use crate::generic_types::{BaseBuilder, PaginationList};
 
 #[derive(Debug)]
 pub enum Format {
