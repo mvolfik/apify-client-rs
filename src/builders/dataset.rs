@@ -1,7 +1,7 @@
 use crate::resource_clients::dataset::DatasetClient;
 use std::marker::PhantomData;
 use crate::error::ApifyClientError;
-use crate::generic_types::{BaseBuilder, PaginationList};
+use crate::generic_types::{BaseBuilder, BaseBuilderInterface, PaginationList, RawOutput};
 
 #[derive(Debug)]
 pub enum Format {
@@ -65,7 +65,7 @@ pub struct GetItemsBuilder<'a, T> {
     _phantom: PhantomData<T>,
 }
 
-impl <'a, T: serde::de::DeserializeOwned> GetItemsBuilder<'a, T> {
+impl <'a, T: serde::de::DeserializeOwned + Sync + Send> GetItemsBuilder<'a, T> {
     pub fn new(dataset_client: &'a DatasetClient<'a>) -> Self {
         GetItemsBuilder {
             dataset_client,
@@ -172,15 +172,15 @@ impl <'a> DownloadItemsBuilder<'a> {
 
     // All formats except XLSX can be converted to a string
     pub async fn send(self) -> Result<Vec<u8>, ApifyClientError> {
-        let mut base_builder: BaseBuilder<'_, Vec<u8>> = BaseBuilder::new(
+        let mut base_builder: BaseBuilder<'_, RawOutput> = BaseBuilder::new(
             self.dataset_client.apify_client,
             self.dataset_client.url_segment.clone(),
             reqwest::Method::GET,
         );
         base_builder.append_query_string(self.options.to_query_params());
         base_builder.append_query_string(format!("format={}&attachment=true", self.format));
-        let resp = base_builder.validate_and_send_request().await?;
-        Ok(resp.bytes().await?.to_vec())
+        let resp = base_builder.send().await?;
+        Ok(resp.to_vec())
     }
 
     pub fn clean(& mut self, clean: bool) -> &'_ mut Self {

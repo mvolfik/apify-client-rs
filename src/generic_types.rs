@@ -4,16 +4,18 @@ use std::marker::PhantomData;
 use crate::utils::parse_pagination_header;
 use reqwest::header::HeaderMap;
 use reqwest::Response;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize};
 use regex::Regex;
 
-#[derive(Debug, PartialEq)]
-pub struct NoOutput;
+#[derive(Debug)]
+pub struct NoOutput {
+    _private: ()
+}
 
-impl NoOutput {
-    pub fn new() -> Self {
-        NoOutput {}
-    }
+#[derive(Debug)]
+pub struct RawOutput {
+    _private: ()
 }
 
 #[derive(Deserialize, Debug, PartialEq)]
@@ -66,7 +68,7 @@ impl <'a, OutputType> BaseBuilder<'a, OutputType> {
         }
     }
 
-    pub async fn validate_and_send_request(self) -> Result<Response, ApifyClientError> {
+    async fn validate_and_send_request(self) -> Result<Response, ApifyClientError> {
         let mut url = format!("{}/{}", self.client.base_url, self.url_segment);
         if let Some(query_string) = self.query_string {
             url = format!("{}?{}", url, query_string);
@@ -80,15 +82,6 @@ impl <'a, OutputType> BaseBuilder<'a, OutputType> {
 }
 
 impl<'a, T: serde::de::DeserializeOwned> BaseBuilder<'a, T> {
-    pub async fn send(self) -> Result<T, ApifyClientError> {
-        let resp = self.validate_and_send_request().await?;
-        let bytes = resp.bytes().await.map_err(
-            |err| ApifyApiError::ApiFailure(format!("Apify API did not return bytes. Something is very wrong. Please contact support@apify.com\n{}", err))
-        )?;
-        let apify_client_result: ApifyClientOutput<T> = serde_json::from_slice(&bytes)?;
-        Ok(apify_client_result.data) 
-    }
-
     pub async fn parse_pagination_list(self, resp: Response) -> Result<PaginationList<T>, ApifyClientError> {
         // For this endpoint, we have to reconstruct PaginationList manually
         let headers = resp.headers().clone();
@@ -116,10 +109,49 @@ impl<'a, T: serde::de::DeserializeOwned> BaseBuilder<'a, T> {
     }
 }
 
-impl<'a> BaseBuilder<'a, NoOutput> {
-    pub async fn send(self) -> Result<NoOutput, ApifyClientError> {
+#[async_trait::async_trait]
+pub trait BaseBuilderInterface {
+    type Output;
+    async fn send(self) -> Result<Self::Output, ApifyClientError>;
+}
+
+#[async_trait::async_trait]
+impl<'a, T: DeserializeOwned + Sync + Send> BaseBuilderInterface for BaseBuilder<'a, T> {
+    type Output = T;
+
+    async fn send(self) -> Result<Self::Output, ApifyClientError> {
+        let bytes = BaseBuilder {
+            phantom: PhantomData::<RawOutput>,
+            body: self.body,
+            client: self.client,
+            method: self.method,
+            query_string: self.query_string,
+            url_segment: self.url_segment,
+        }
+        .send()
+        .await?;
+        let apify_client_result: ApifyClientOutput<T> = serde_json::from_slice(&bytes)?;
+        Ok(apify_client_result.data)
+    }
+}
+
+#[async_trait::async_trait]
+impl<'a> BaseBuilderInterface for BaseBuilder<'a, NoOutput> {
+    type Output = ();
+    async fn send(self) -> Result<Self::Output, ApifyClientError> {
         self.validate_and_send_request().await?;
-        Ok(NoOutput::new()) 
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl<'a> BaseBuilderInterface for BaseBuilder<'a, RawOutput> {
+    type Output = bytes::Bytes;
+    async fn send(self) -> Result<bytes::Bytes, ApifyClientError> {
+        let resp = self.validate_and_send_request().await?;
+        resp.bytes().await.map_err(
+            |err| ApifyApiError::ApiFailure(format!("Apify API did not return bytes. Something is very wrong. Please contact support@apify.com\n{}", err)).into()
+        )
     }
 }
 

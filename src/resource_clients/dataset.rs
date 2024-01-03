@@ -3,7 +3,7 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 use crate::base_clients::resource_client::ResourceClient;
-use crate::generic_types::{BaseBuilder, PaginationList, NoOutput};
+use crate::generic_types::{BaseBuilder, BaseBuilderInterface, PaginationList, NoOutput};
 use crate::error::ApifyClientError;
 use crate::builders::dataset::{GetItemsBuilder, DownloadItemsBuilder, Format};
 use std::fmt::format;
@@ -33,7 +33,7 @@ impl <'a> DatasetClient<'a> {
         }
     }
 
-    pub fn list_items<T: serde::de::DeserializeOwned>(&self) -> GetItemsBuilder<T> {
+    pub fn list_items<T: serde::de::DeserializeOwned + Sync + Send>(&self) -> GetItemsBuilder<T> {
         GetItemsBuilder::new(self)
     }
 
@@ -65,15 +65,14 @@ pub struct PushItemsBuilder<'a, T: serde::Serialize + 'a> {
 }
 
 impl <'a, T: serde::Serialize> PushItemsBuilder<'a, T> {
-    pub async fn send(self) -> Result<NoOutput, ApifyClientError> {
+    pub async fn send(self) -> Result<(), ApifyClientError> {
         let mut builder: BaseBuilder<'_, NoOutput> = BaseBuilder::new(
             self.dataset_client.apify_client,
             self.dataset_client.url_segment.clone(),
             Method::POST,
         );
         builder.raw_payload(serde_json::to_vec(&self.items)?);
-        builder.validate_and_send_request().await?;
-        Ok(NoOutput)
+        builder.send().await
     }
 }
 

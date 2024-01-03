@@ -21,7 +21,7 @@ pub mod builders;
 mod test {
     use super::apify_client::ApifyClient;
     use super::error::{ApifyApiError, ApifyClientError};
-    use super::generic_types::{NoOutput, PaginationList};
+    use super::generic_types::{BaseBuilderInterface, PaginationList};
     use serde::{Serialize, Deserialize};
     use super::resource_clients::run::Run;
     use super::resource_clients::dataset::Dataset;
@@ -64,12 +64,12 @@ mod test {
         dataset
     }
 
-    fn delete_dataset (client: &ApifyClient, id_or_name: &str) -> NoOutput {
+    fn delete_dataset (client: &ApifyClient, id_or_name: &str) -> () {
         let no_content = await_test!(client.dataset(id_or_name).delete().send()).unwrap();
         no_content
     }
 
-    fn push_items (client: &ApifyClient, id_or_name: &str, items: Vec<Item>) -> Result<NoOutput, ApifyClientError> {
+    fn push_items (client: &ApifyClient, id_or_name: &str, items: Vec<Item>) -> Result<(), ApifyClientError> {
         let put_result = await_test!(client.dataset(id_or_name).push_items(&items).send());
         put_result
     }
@@ -121,7 +121,7 @@ mod test {
         assert_eq!(maybe_dataset.unwrap().name.unwrap(), new_name);
 
         let no_content = delete_dataset(&client, &dataset.id);
-        assert_eq!(no_content, NoOutput::new());
+        assert_eq!(no_content, ());
 
         let maybe_dataset = get_dataset(&client, &dataset_id);
         assert!(maybe_dataset.is_err());
@@ -166,7 +166,7 @@ mod test {
         let put_result = push_items(&client, &dataset_id, items.clone());
         println!("{:?}", put_result);
         assert!(put_result.is_ok());
-        assert_eq!(put_result.unwrap(), NoOutput::new());
+        assert_eq!(put_result.unwrap(), ());
 
         // We have to sleep so that numbers on Apify's side update propagate properly
         std::thread::sleep(std::time::Duration::from_secs(10));
@@ -193,7 +193,7 @@ mod test {
         assert!(maybe_string.is_ok());
         println!("{}", maybe_string.unwrap());
 
-        assert_eq!(no_content, NoOutput::new());
+        assert_eq!(no_content, ());
     }
 
     #[test]

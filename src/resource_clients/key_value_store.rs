@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use crate::apify_client::ApifyClient;
 use crate::base_clients::resource_client::ResourceClient;
 use crate::error::ApifyClientError;
-use crate::generic_types::{BaseBuilder, NoOutput};
+use crate::generic_types::{BaseBuilder, BaseBuilderInterface, NoOutput, RawOutput};
 
 pub struct KeyValueStoreClient<'a> {
     pub apify_client: &'a ApifyClient,
@@ -32,10 +32,25 @@ impl<'kv> KeyValueStoreClient<'kv> {
         }
     }
 
-    pub fn get_value<'key, 'builder, T: DeserializeOwned>(
+    pub fn get_value<'key, 'builder, T: DeserializeOwned + Send + Sync>(
         &'kv self,
         key: &'key str,
     ) -> GetValueBuilder<'builder, T>
+    where
+        'kv: 'builder,
+        'key: 'builder,
+    {
+        GetValueBuilder {
+            key_value_store_client: self,
+            key,
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn get_value_raw<'key, 'builder>(
+        &'kv self,
+        key: &'key str,
+    ) -> GetValueBuilder<'builder, RawOutput>
     where
         'kv: 'builder,
         'key: 'builder,
@@ -65,14 +80,22 @@ impl<'kv> KeyValueStoreClient<'kv> {
     }
 }
 
-pub struct GetValueBuilder<'a, T: DeserializeOwned> {
+pub struct GetValueBuilder<'a, T>
+where
+    BaseBuilder<'a, T>: BaseBuilderInterface,
+{
     key_value_store_client: &'a KeyValueStoreClient<'a>,
     key: &'a str,
     phantom: PhantomData<T>,
 }
 
-impl<'a, T: DeserializeOwned> GetValueBuilder<'a, T> {
-    pub async fn send(self) -> Result<T, ApifyClientError> {
+impl<'a, T> GetValueBuilder<'a, T>
+where
+    BaseBuilder<'a, T>: BaseBuilderInterface,
+{
+    pub async fn send(
+        self,
+    ) -> Result<<BaseBuilder<'a, T> as BaseBuilderInterface>::Output, ApifyClientError> {
         let builder: BaseBuilder<'_, T> = BaseBuilder::new(
             self.key_value_store_client.apify_client,
             format!(
@@ -81,7 +104,7 @@ impl<'a, T: DeserializeOwned> GetValueBuilder<'a, T> {
             ),
             Method::GET,
         );
-        builder.send().await
+        builder.send().await.map_err(Into::into)
     }
 }
 
@@ -92,7 +115,7 @@ pub struct SetValueBuilder<'a, T: Serialize> {
 }
 
 impl<'a, T: Serialize> SetValueBuilder<'a, T> {
-    pub async fn send(self) -> Result<NoOutput, ApifyClientError> {
+    pub async fn send(self) -> Result<(), ApifyClientError> {
         let mut builder: BaseBuilder<'_, NoOutput> = BaseBuilder::new(
             self.key_value_store_client.apify_client,
             format!(
@@ -102,8 +125,7 @@ impl<'a, T: Serialize> SetValueBuilder<'a, T> {
             Method::PUT,
         );
         builder.raw_payload(serde_json::to_vec(&self.value)?);
-        builder.validate_and_send_request().await?;
-        Ok(NoOutput)
+        builder.send().await.map_err(Into::into)
     }
 }
 
